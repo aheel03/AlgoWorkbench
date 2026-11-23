@@ -90,6 +90,34 @@ The optional live test uses the supplied server secret to create two temporary, 
 
 ## Production
 
+### Vercel
+
+This repository includes `vercel.json` and the serverless entry point `api/index.js`. Vercel builds the Vite frontend into `dist` and routes `/api/*` to the Express handler. Deploy the repository root, not just the `dist` folder.
+
+1. In **Vercel → Project → Settings → Environment Variables**, add these values from your local `.env` for **Production** (and Preview if you use preview deployments):
+
+   | Name | Required |
+   | --- | --- |
+   | `SUPABASE_URL` | Yes |
+   | `SUPABASE_PUBLISHABLE_KEY` | Yes |
+   | `ONLINECOMPILER_API_KEY` | Yes, for code execution |
+   | `SUPABASE_SECRET_KEY` | No; reserved for administrative scripts |
+   | `SUPABASE_JWKS_URL` | No; current routes verify sessions through Supabase Auth |
+
+   Vercel does not receive your ignored local `.env`. Do not add `VITE_` prefixes to the compiler or Supabase secret keys.
+
+2. Use the **Vite** framework preset, **`npm run build`** as the build command, and **`dist`** as the output directory. These are also declared in `vercel.json`. Use Node.js 22 or newer and keep Fluid compute enabled; the API function has a 120-second maximum duration.
+3. Set your Supabase **Authentication → URL Configuration → Site URL** to `https://algowb.vercel.app`, and add `https://algowb.vercel.app` to Redirect URLs alongside any local development URLs. Substitute your actual deployment URL if it changes.
+4. Apply `supabase/schema.sql` if you have not already done so. Existing database tables and rows are preserved.
+5. Commit and push the deployment changes to the branch connected to Vercel, then redeploy after adding the environment variables.
+6. Open `https://algowb.vercel.app/api/health`; it should return `{"status":"ok"}`. `/api/config` should return JSON containing `stressMode: "stepped"`. It exposes the browser-safe Supabase key, never either secret key.
+
+On Vercel, the browser runs stress cases sequentially through authenticated `/api/stress/step` requests. Each request generates and executes **one case** and finishes before the next begins. Configurations and completed progress stay in the browser draft; refreshing resumes the next unfinished case on any server instance. Keep the tab open while testing. Completed reports save to the existing `stress_runs` table with RLS. This avoids relying on background work or shared process memory between function invocations.
+
+If the page reports a missing environment variable, add it in Vercel and redeploy. If `/api/health` returns HTML or 404, check that the deployment contains `api/index.js` and `vercel.json` and that the project root points at this repository. Use Vercel's function logs for server errors; running `npm run dev` locally cannot start the deployed backend.
+
+### A persistent Node server
+
 ```sh
 npm run build
 npm start
@@ -113,8 +141,8 @@ scripts/              Live service diagnostics and integration test
 requirements/         Original academic requirements PDF
 ```
 
-This is a single-server academic implementation. Execution and polling quotas are held in memory. Active jobs stop on server restart; finished jobs remain on the server for 30 minutes and can be saved to Supabase. Stress runs have a 10-minute overall deadline. Multiple server replicas would require a shared queue, job store, and distributed rate limiting.
+In persistent-server mode, stress jobs live in process memory and stop on server restart; finished jobs remain available for 30 minutes. Vercel uses the per-case browser-driven mode described above. Set `STRESS_MODE=stepped` to exercise that mode locally. Both modes have a 10-minute overall deadline and save reports to Supabase. Execution quotas are per process; deployments requiring strict quotas across multiple instances should use a shared rate-limit store.
 
 The testcase debugger, algorithm visualizer, template vault, and whiteboard are outside this implementation's requested scope.
 
-Provider references: [OnlineCompiler run API](https://onlinecompiler.io/docs/run-code), [compiler identifiers](https://onlinecompiler.io/docs/compilers), [Supabase email signup](https://supabase.com/docs/reference/javascript/auth-signup), [Supabase API key roles](https://supabase.com/docs/guides/getting-started/api-keys).
+Provider references: [OnlineCompiler run API](https://onlinecompiler.io/docs/run-code), [compiler identifiers](https://onlinecompiler.io/docs/compilers), [Supabase email signup](https://supabase.com/docs/reference/javascript/auth-signup), [Supabase API key roles](https://supabase.com/docs/guides/getting-started/api-keys), [Vercel Node functions](https://vercel.com/docs/functions/runtimes/node-js), [Vercel routing configuration](https://vercel.com/docs/project-configuration/vercel-json).

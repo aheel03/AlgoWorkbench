@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ZodError } from 'zod';
-import { LANGUAGES, runSchema, stressSchema, solutionSchema, profileSchema } from './validation.js';
+import { LANGUAGES, runSchema, stressSchema, stressStepSchema, stressReportSchema, solutionSchema, profileSchema } from './validation.js';
 import { execute, HttpError } from './compiler.js';
-import { createJob, publicJob, runStress } from './stress.js';
+import { createJob, publicJob, runStress, runStressCase } from './stress.js';
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const jobs = new Map();
@@ -34,19 +34,26 @@ const auth = asyncRoute(async (req, res, next) => {
   req.user = data.user; req.db = db; next();
 });
 
-export function createApp() {
+export function createApp({ serverless = false, serveFrontend = true } = {}) {
   const app = express();
   app.disable('x-powered-by');
+  if (serverless) app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: {
     directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], connectSrc: ["'self'", process.env.SUPABASE_URL || 'https://*.supabase.co'], imgSrc: ["'self'", 'data:'] },
   } }));
   app.use(express.json({ limit: '512kb' }));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-  app.get('/api/config', (_req, res) => res.json({
+  app.get('/api/config', (_req, res) => {
+    const missing = ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'].filter(key => !process.env[key]);
+    if (missing.length) return res.status(503).json({ error: `Server configuration is missing ${missing.join(', ')}. Add these environment variables in your hosting project settings and redeploy.` });
+    res.json({
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
     compilerConfigured: Boolean(process.env.ONLINECOMPILER_API_KEY), languages: LANGUAGES,
-  }));
+    stressMode: serverless ? 'stepped' : 'background',
+    });
+  });
   app.use('/api', rateLimit({ windowMs: 60000, limit: 150, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many requests. Please wait a minute.' } }));
   app.use('/api', auth);
   const runLimiter = rateLimit({ windowMs: 60000, limit: 20, keyGenerator: req => req.user.id, message: { error: 'You can run code 20 times a minute. Please wait.' } });
@@ -62,7 +69,28 @@ export function createApp() {
     try { res.json(await execute(data, data.input, data.timeLimit, controller.signal)); }
     finally { res.off('close', onClose); activeRuns.set(userId, Math.max(0, (activeRuns.get(userId) || 1) - 1)); if (!activeRuns.get(userId)) activeRuns.delete(userId); }
   }));
+  app.post('/api/stress/step', rateLimit({ windowMs: 60000, limit: 60, keyGenerator: req => req.user.id, message: { error: 'Stress testing is limited to 60 cases a minute. Please wait before continuing.' } }), asyncRoute(async (req, res) => {
+    const { config, iteration } = stressStepSchema.parse(req.body);
+    const userId = req.user.id;
+    if ((activeRuns.get(userId) || 0) >= 2) throw new HttpError(429, 'Two programs or test cases are already running.');
+    if ([...activeRuns.values()].reduce((a, b) => a + b, 0) >= 8) throw new HttpError(429, 'The compiler queue is full. Try again shortly.');
+    activeRuns.set(userId, (activeRuns.get(userId) || 0) + 1);
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(100000)]);
+    const onClose = () => { if (!res.writableEnded) controller.abort(); };
+    res.on('close', onClose);
+    try { res.json(await runStressCase(config, iteration, execute, signal)); }
+    catch (error) { if (signal.aborted && !controller.signal.aborted) throw new HttpError(504, 'This test case exceeded the request time limit. Try a smaller input or shorter program time limit.'); throw error; }
+    finally { res.off('close', onClose); activeRuns.set(userId, Math.max(0, (activeRuns.get(userId) || 1) - 1)); if (!activeRuns.get(userId)) activeRuns.delete(userId); }
+  }));
+  app.post('/api/stress/save', asyncRoute(async (req, res) => {
+    const { config, result } = stressReportSchema.parse(req.body);
+    // Reports belong to the authenticated user; never accept a user_id from the browser.
+    const { data, error } = await req.db.from('stress_runs').upsert({ id: result.id, user_id: req.user.id, config, result }).select().single();
+    if (error) dbError(error); res.json(data);
+  }));
   app.post('/api/stress', rateLimit({ windowMs: 60000, limit: 3, keyGenerator: req => req.user.id, message: { error: 'Please wait a minute before starting another stress test.' } }), asyncRoute(async (req, res) => {
+    if (serverless) throw new HttpError(409, 'This deployment runs stress tests one case per request. Refresh the page to load the current client.');
     const config = stressSchema.parse(req.body);
     for (const [id, job] of jobs) if (job.finishedAt && Date.now() - job.finishedAt > 30 * 60 * 1000) jobs.delete(id);
     if ([...jobs.values()].some(j => j.userId === req.user.id && j.status === 'running')) throw new HttpError(409, 'You already have a stress test running.');
@@ -125,7 +153,7 @@ export function createApp() {
   }));
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   const dist = fileURLToPath(new URL('../dist', import.meta.url));
-  if (existsSync(path.join(dist, 'index.html'))) {
+  if (serveFrontend && existsSync(path.join(dist, 'index.html'))) {
     app.use(express.static(dist));
     app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')));
   }

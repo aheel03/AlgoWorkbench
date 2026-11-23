@@ -14,5 +14,6 @@ export type StressJob = {
   counterexample: { iteration: number; input: string; brute?: RunResult; optimized?: RunResult; generator?: RunResult; role?: string } | null;
 };
 export type HistoryItem = { id: string; result: StressJob; created_at: string };
-export type AppConfig = { supabaseUrl: string; supabasePublishableKey: string; compilerConfigured: boolean; languages: { id: Language; name: string; compiler: string; extension: string }[] };
+export type StressStep = { status: 'passed' | 'mismatch' | 'error'; log: StressJob['logs'][number] | null; counterexample: StressJob['counterexample']; error: string | null };
+export type AppConfig = { supabaseUrl: string; supabasePublishableKey: string; compilerConfigured: boolean; stressMode?: 'stepped' | 'background'; languages: { id: Language; name: string; compiler: string; extension: string }[] };
 export type AppContext = { client: SupabaseClient | null; session: Session | null; config: AppConfig; requireAuth: () => boolean; notify: (message: string) => void; owner: string };

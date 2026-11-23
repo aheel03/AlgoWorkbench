@@ -87,3 +87,76 @@ test('stress counterexample survives navigation and browser refresh', async ({ p
   await page.reload(); await page.getByRole('button', { name: /Stress Lab/ }).click();
   await expect(page.getByText('Found it. A counterexample!')).toBeVisible();
 });
+
+async function steppedConfig(page: import('@playwright/test').Page) {
+  await signedIn(page);
+  await page.route('**/api/config', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ json: { ...await response.json(), stressMode: 'stepped' } });
+  });
+}
+
+test('serverless stress runs every case sequentially and saves its complete report', async ({ page }) => {
+  await steppedConfig(page);
+  const cases: number[] = [];
+  await page.route('**/api/stress/step', async route => {
+    const { iteration } = route.request().postDataJSON(); cases.push(iteration);
+    await route.fulfill({ json: { status: 'passed', log: { iteration, matches: true, bruteTime: 0.01, optimizedTime: 0.02 }, error: null, counterexample: null } });
+  });
+  await page.route('**/api/stress/save', async route => {
+    const report = route.request().postDataJSON();
+    expect(report.result.status).toBe('passed'); expect(report.result.logs).toHaveLength(3);
+    expect(report.config.iterations).toBe(3);
+    await route.fulfill({ json: { id: report.result.id } });
+  });
+  await page.goto('/'); await page.getByRole('button', { name: /Stress Lab/ }).click();
+  await page.getByRole('spinbutton', { name: /^Test cases/ }).fill('3');
+  await page.getByRole('button', { name: 'Start stress test', exact: true }).click();
+  await expect(page.getByText('All tests passed. Nicely done.')).toBeVisible();
+  expect(cases).toEqual([1, 2, 3]);
+  await page.getByRole('button', { name: 'Save run', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeDisabled();
+});
+
+test('serverless stress resumes from the next unfinished case after refresh', async ({ page }) => {
+  await steppedConfig(page);
+  let blockSecond = true; const cases: number[] = [];
+  await page.route('**/api/stress/step', async route => {
+    const { iteration } = route.request().postDataJSON(); cases.push(iteration);
+    if (iteration === 2 && blockSecond) { await new Promise(resolve => setTimeout(resolve, 2000)); await route.abort().catch(() => {}); return; }
+    await route.fulfill({ json: { status: 'passed', log: { iteration, matches: true, bruteTime: 0.01, optimizedTime: 0.02 }, error: null, counterexample: null } });
+  });
+  await page.goto('/'); await page.getByRole('button', { name: /Stress Lab/ }).click();
+  await page.getByRole('spinbutton', { name: /^Test cases/ }).fill('2');
+  await page.getByRole('button', { name: 'Start stress test', exact: true }).click();
+  await expect(page.getByText(/1 of 2 cases completed/)).toBeVisible();
+  await page.waitForTimeout(650);
+  blockSecond = false; await page.reload();
+  await page.getByRole('button', { name: /Stress Lab/ }).click();
+  await expect(page.getByText('All tests passed. Nicely done.')).toBeVisible();
+  expect(cases.filter(i => i === 1)).toHaveLength(1);
+  expect(cases.at(-1)).toBe(2);
+});
+
+test('serverless stop cancels the active request and schedules no more cases', async ({ page }) => {
+  await steppedConfig(page);
+  const cases: number[] = [];
+  await page.route('**/api/stress/step', async route => {
+    cases.push(route.request().postDataJSON().iteration);
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await route.fulfill({ json: { status: 'passed', log: { iteration: 1, matches: true, bruteTime: 0.01, optimizedTime: 0.02 }, error: null, counterexample: null } }).catch(() => {});
+  });
+  await page.goto('/'); await page.getByRole('button', { name: /Stress Lab/ }).click();
+  await page.getByRole('button', { name: 'Start stress test', exact: true }).click();
+  await expect.poll(() => cases.length).toBe(1);
+  await page.getByRole('button', { name: 'Stop test', exact: true }).click();
+  await expect(page.getByText('Test stopped.', { exact: true })).toBeVisible();
+  await page.waitForTimeout(850); expect(cases).toEqual([1]);
+});
+
+test('hosting configuration errors are shown without local development instructions', async ({ page }) => {
+  await page.route('**/api/config', route => route.fulfill({ status: 503, json: { error: 'Server configuration is missing SUPABASE_URL. Add it in the hosting settings and redeploy.' } }));
+  await page.goto('/');
+  await expect(page.getByText(/Server configuration is missing SUPABASE_URL/)).toBeVisible();
+  await expect(page.getByText(/Run npm run dev/)).toHaveCount(0);
+});

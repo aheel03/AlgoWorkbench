@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGenerator, compareOutputs, createJob, publicJob, runStress } from '../server/stress.js';
+import { createGenerator, compareOutputs, createJob, publicJob, runStress, runStressCase } from '../server/stress.js';
 import { normalizeResult } from '../server/compiler.js';
 import { stressSchema, runSchema } from '../server/validation.js';
 
@@ -86,4 +86,13 @@ test('validation rejects inverted bounds, excessive work, and unsupported langua
 test('malformed provider responses fail closed', () => {
   assert.throws(() => normalizeResult({ output: 'looks successful' }));
   assert.equal(normalizeResult({ output: 'ok', status: 'success', exit_code: 0, time: '0.5', memory: '2048' }).time, 0.5);
+});
+
+test('independent cases reproduce the same sequence as a continuous run', async () => {
+  const cfg = config(); const inputs = [];
+  const runner = async (_program, input) => { inputs.push(input); return result('42'); };
+  await runStress(createJob('owner', cfg), runner);
+  const continuous = [...inputs]; inputs.length = 0;
+  for (let i = 1; i <= cfg.iterations; i++) await runStressCase(cfg, i, runner);
+  assert.deepEqual(inputs, continuous);
 });

@@ -40,8 +40,13 @@ export default function App() {
     let alive = true; let unsubscribe: (() => void) | undefined;
     void (async () => {
       try {
-        const response = await fetch('/api/config'); if (!response.ok) throw new Error('The API server is unavailable. Run npm run dev to start the frontend and backend together.');
-        const data: AppConfig = await response.json(); if (!alive) return; setConfig(data);
+        const response = await fetch('/api/config');
+        if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('The backend API is not responding correctly. Check the deployment routing and server logs.');
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'The backend API is unavailable. Check the deployment settings and try again.');
+        const data = body as AppConfig;
+        if (!data.supabaseUrl || !data.supabasePublishableKey || !Array.isArray(data.languages)) throw new Error('The backend configuration is incomplete. Check the server environment variables and redeploy.');
+        if (!alive) return; setConfig(data);
         if (data.supabaseUrl && data.supabasePublishableKey) {
           const supabase = createClient(data.supabaseUrl, data.supabasePublishableKey); setClient(supabase);
           const { data: listener } = supabase.auth.onAuthStateChange((event, current) => {

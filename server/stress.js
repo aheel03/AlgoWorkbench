@@ -40,39 +40,52 @@ export function publicJob(job) {
   return publicData;
 }
 
+// One bounded case can execute on any serverless instance without a job store.
+export async function runStressCase(config, iteration, runner = execute, signal) {
+  signal?.throwIfAborted();
+  let input;
+  if (config.generator.type === 'custom') {
+    const generatorInput = `${config.seed} ${iteration}\n`;
+    const generated = await runner(config.generator.program, generatorInput, config.timeLimit, signal);
+    if (!succeeded(generated)) return {
+      status: 'error', log: null,
+      error: 'The custom generator failed. Inspect its output below.',
+      counterexample: { iteration, input: generatorInput, role: 'generator', generator: generated },
+    };
+    input = generated.output;
+  } else {
+    const generate = createGenerator(config.generator, config.seed);
+    // Advancing the seeded generator also reproduces an arbitrary case after refresh.
+    for (let i = 0; i < iteration; i++) input = generate();
+  }
+  const settled = await Promise.allSettled([
+    runner(config.brute, input, config.timeLimit, signal),
+    runner(config.optimized, input, config.timeLimit, signal),
+  ]);
+  const failed = settled.find(r => r.status === 'rejected');
+  if (failed) throw failed.reason;
+  signal?.throwIfAborted();
+  const [brute, optimized] = settled.map(r => r.value);
+  const valid = succeeded(brute) && succeeded(optimized);
+  const matches = valid && compareOutputs(brute.output, optimized.output, config.comparison);
+  return {
+    status: matches ? 'passed' : valid ? 'mismatch' : 'error',
+    log: { iteration, matches, bruteTime: brute.time, optimizedTime: optimized.time },
+    error: valid ? null : 'A solution failed, timed out, or produced truncated output.',
+    counterexample: matches ? null : { iteration, input, brute, optimized, role: !succeeded(brute) ? 'brute' : !succeeded(optimized) ? 'optimized' : null },
+  };
+}
+
 export async function runStress(job, runner = execute) {
   const { config, controller } = job;
-  const generate = createGenerator(config.generator, config.seed);
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10 * 60 * 1000)]);
   try {
     for (let i = 1; i <= config.iterations; i++) {
       signal.throwIfAborted();
-      let input;
-      if (config.generator.type === 'custom') {
-        const generated = await runner(config.generator.program, `${config.seed} ${i}\n`, config.timeLimit, signal);
-        if (!succeeded(generated)) {
-          job.status = 'error'; job.error = 'The custom generator failed. Inspect its output below.';
-          job.counterexample = { iteration: i, input: `${config.seed} ${i}\n`, role: 'generator', generator: generated };
-          break;
-        }
-        input = generated.output;
-      } else input = generate();
-      const settled = await Promise.allSettled([
-        runner(config.brute, input, config.timeLimit, signal),
-        runner(config.optimized, input, config.timeLimit, signal),
-      ]);
-      const failed = settled.find(r => r.status === 'rejected');
-      if (failed) throw failed.reason;
-      const [brute, optimized] = settled.map(r => r.value);
-      signal.throwIfAborted();
-      const valid = succeeded(brute) && succeeded(optimized);
-      const matches = valid && compareOutputs(brute.output, optimized.output, config.comparison);
-      job.completed = i;
-      job.logs.push({ iteration: i, matches, bruteTime: brute.time, optimizedTime: optimized.time });
-      if (!matches) {
-        job.status = valid ? 'mismatch' : 'error';
-        job.counterexample = { iteration: i, input, brute, optimized, role: !succeeded(brute) ? 'brute' : !succeeded(optimized) ? 'optimized' : null };
-        if (!valid) job.error = 'A solution failed, timed out, or produced truncated output.';
+      const result = await runStressCase(config, i, runner, signal);
+      if (result.log) { job.completed = i; job.logs.push(result.log); }
+      if (result.status !== 'passed') {
+        job.status = result.status; job.error = result.error; job.counterexample = result.counterexample;
         break;
       }
     }

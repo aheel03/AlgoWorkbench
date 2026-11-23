@@ -64,6 +64,10 @@ try {
   const matching = await request(token, '/stress', 'POST', cfg); assert.equal(matching.status, 202);
   assert.equal((await waitForJob(token, matching.body.id)).status, 'passed');
   console.log('Stress: matching solutions passed with real remote execution.');
+  const caseResult = await request(token, '/stress/step', 'POST', { config: cfg, iteration: 1 });
+  assert.equal(caseResult.status, 200); assert.equal(caseResult.body.status, 'passed');
+  assert.equal(caseResult.body.log.iteration, 1);
+  console.log('Stress: stateless serverless case execution passed with the real compiler.');
   const profile = await request(token, '/profile');
   if (profile.status === 503) console.log('Persistence: not tested; database migration is pending.');
   else {
