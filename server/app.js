@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { ZodError } from 'zod';
-import { LANGUAGES, runSchema, stressSchema, stressStepSchema, stressReportSchema, solutionSchema, profileSchema } from './validation.js';
+import { LANGUAGES, runSchema, stressSchema, stressStepSchema, stressReportSchema, solutionSchema, profileSchema, whiteboardSchema } from './validation.js';
 import { execute, HttpError } from './compiler.js';
 import { createJob, publicJob, runStress, runStressCase } from './stress.js';
 
@@ -39,7 +39,7 @@ export function createApp({ serverless = false, serveFrontend = true } = {}) {
   app.disable('x-powered-by');
   if (serverless) app.set('trust proxy', 1);
   app.use(helmet({ contentSecurityPolicy: {
-    directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], connectSrc: ["'self'", process.env.SUPABASE_URL || 'https://*.supabase.co'], imgSrc: ["'self'", 'data:'] },
+    directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], connectSrc: ["'self'", process.env.SUPABASE_URL || 'https://*.supabase.co'], imgSrc: ["'self'", 'data:', 'blob:'] },
   } }));
   app.use(express.json({ limit: '512kb' }));
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -112,6 +112,25 @@ export function createApp({ serverless = false, serveFrontend = true } = {}) {
     const { data, error } = await req.db.from('profiles').select('*').eq('id', req.user.id).maybeSingle();
     if (error) dbError(error);
     res.json(data);
+  }));
+  app.get('/api/whiteboards', asyncRoute(async (req, res) => {
+    const { data, error } = await req.db.from('whiteboards').select('id,title,updated_at').eq('user_id', req.user.id).order('updated_at', { ascending: false }).limit(100);
+    if (error) dbError(error); res.json(data);
+  }));
+  app.get('/api/whiteboards/:id', asyncRoute(async (req, res) => {
+    const { data, error } = await req.db.from('whiteboards').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle();
+    if (error) dbError(error); if (!data) throw new HttpError(404, 'Whiteboard not found.'); res.json(data);
+  }));
+  app.post('/api/whiteboards', asyncRoute(async (req, res) => {
+    const { id, ...fields } = whiteboardSchema.parse(req.body);
+    const row = { ...fields, user_id: req.user.id };
+    const query = id ? req.db.from('whiteboards').update(row).eq('id', id).eq('user_id', req.user.id) : req.db.from('whiteboards').insert(row);
+    const { data, error } = await query.select().maybeSingle();
+    if (error) dbError(error); if (!data) throw new HttpError(404, 'Whiteboard not found.'); res.status(id ? 200 : 201).json(data);
+  }));
+  app.delete('/api/whiteboards/:id', asyncRoute(async (req, res) => {
+    const { error } = await req.db.from('whiteboards').delete().eq('id', req.params.id).eq('user_id', req.user.id);
+    if (error) dbError(error); res.status(204).end();
   }));
   app.patch('/api/profile', asyncRoute(async (req, res) => {
     const fields = profileSchema.parse(req.body);

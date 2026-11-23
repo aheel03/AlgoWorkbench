@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { boardDocumentSchema } from '../shared/whiteboard.js';
 
 export const LANGUAGES = [
   { id: 'cpp', name: 'C++ 20', compiler: 'g++-15-cpp20', extension: 'cpp' },
@@ -66,3 +67,6 @@ export const solutionSchema = z.object({
   language, code: source, input: z.string().max(64000).default(''),
 });
 export const profileSchema = z.object({ username: z.string().trim().min(3).max(24).regex(/^[a-zA-Z0-9_]+$/, 'Use letters, numbers, and underscores.') });
+export const whiteboardSchema = z.object({
+  id: z.string().uuid().optional(), title: z.string().trim().min(1).max(100), document: boardDocumentSchema,
+});

@@ -13,7 +13,7 @@ test('API exposes public configuration without secrets and requires authenticati
   assert.equal(config.status, 200); assert.ok(raw.includes('public-test-key'));
   assert.ok(!raw.includes('private-database-secret')); assert.ok(!raw.includes('private-compiler-secret'));
   assert.equal(config.headers.get('x-content-type-options'), 'nosniff');
-  for (const [route, method] of [['/run', 'POST'], ['/stress', 'POST'], ['/solutions', 'GET'], ['/profile', 'PATCH'], ['/history', 'GET'], ['/stress/someone-elses-job', 'GET']]) {
+  for (const [route, method] of [['/run', 'POST'], ['/stress', 'POST'], ['/solutions', 'GET'], ['/profile', 'PATCH'], ['/history', 'GET'], ['/whiteboards', 'GET'], ['/whiteboards', 'POST'], ['/whiteboards/private-board', 'GET'], ['/whiteboards/private-board', 'DELETE'], ['/stress/someone-elses-job', 'GET']]) {
     const response = await fetch(`${base}/api${route}`, { method, headers: { 'Content-Type': 'application/json' }, ...(method !== 'GET' ? { body: '{}' } : {}) });
     assert.equal(response.status, 401, `${method} ${route} requires auth`);
   }

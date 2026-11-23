@@ -1,8 +1,8 @@
 # AlgoWorkbench
 
-A competitive programming workspace for the CSE 4113 Internet Programming Lab project, based on `requirements/AlgoWorkBenchFD.pdf`. This implementation covers **FR-01–08** (accounts and online IDE) and **FR-13–19** (stress testing), with saved solutions and stress-test history.
+A competitive programming workspace for the CSE 4113 Internet Programming Lab project, based on `requirements/AlgoWorkBenchFD.pdf`. This implementation covers **FR-01–08** (accounts and online IDE), **FR-13–19** (stress testing), and **FR-27–28** (whiteboard), with saved solutions, boards, and stress-test history.
 
-The interface uses a dark, pixel-inspired workbench with green accents, square borders, pixel typography, and a tiny dinosaur. It adapts to desktop and mobile screens.
+The interface uses a pixel-inspired workbench with green accents, square borders, and desktop/mobile layouts. The header's light/dark toggle changes the entire app, including code editors, dialogs, and the whiteboard. Appearance is stored in the browser and restored before the page paints.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ The supplied credentials are already configured in the local, ignored `.env`. Fo
 
 ## One-time Supabase setup
 
-1. Open the SQL Editor for your Supabase project and run **[supabase/schema.sql](supabase/schema.sql)**. This creates `profiles`, `solutions`, and `stress_runs`, along with indexes and row-level security policies. It is safe to run again.
+1. Open the SQL Editor for your Supabase project and run **[supabase/schema.sql](supabase/schema.sql)**. This creates `profiles`, `solutions`, `stress_runs`, and `whiteboards`, along with indexes and row-level security policies. It is safe to run again. **Existing installations only need to apply [the whiteboard migration](supabase/migrations/20261123_whiteboards.sql) to add board saves.**
 2. In **Authentication → URL Configuration**, set Site URL to `http://localhost:5173` and add `http://localhost:5173` and `http://127.0.0.1:5173` to Redirect URLs. Add your deployed URL before deployment.
 3. Email registration is enabled in the supplied project and **email confirmation is required**. New users must follow the confirmation email before signing in. Account creation uses Supabase Auth directly; no custom schema is needed for authentication itself.
 
@@ -39,6 +39,26 @@ Passwords and refresh tokens are managed by Supabase Auth. Profiles are created 
 - **IDE:** CodeMirror editor with syntax highlighting, autocomplete, indentation, search, undo, code folding, custom stdin, stdout/stderr, execution status, runtime and memory metrics, local drafts, account saves, reopening/deleting saved solutions, and source downloads. `Ctrl+Enter` runs; `Ctrl+S` saves.
 - **Languages:** C++20, Python 3, Java, JavaScript, and C. All compilation happens in OnlineCompiler.io's remote sandbox. Programs are never executed on the application server.
 - **Stress Lab:** separate languages for reference and optimized solutions; seeded integer-array and pair generators; custom generator programs; whitespace-token or exact comparison; up to 50 test cases; per-program execution limits; live progress; cancellation; first counterexample with actual outputs/errors; input and JSON downloads; saved run history. Results survive browser refresh, and active jobs reconnect while the server retains them.
+- **Whiteboard:** pen, whole-element eraser, rectangles, ellipses, lines, arrows, multiline text, selection/moving, duplication, colors, stroke widths, shape fill, text sizes, 40-step undo/redo, clear confirmation, pan/zoom/fit, dotted/grid/plain backgrounds, snap to grid, and editable array/binary-tree/directed-graph presets. Board drafts autosave per user in the browser. Account saves can be reopened or deleted under **My boards**. Export PNG/SVG images or editable JSON; import JSON to continue a diagram.
+
+### Whiteboard controls and persistence
+
+Open **Whiteboard** in the main navigation. Drawing and local exports work for guests; saving to an account requires sign-in and the whiteboard table migration above. Saved records contain the editable diagram snapshot and are protected by user ownership checks and Supabase RLS. No new hosting environment variables are needed.
+
+| Shortcut | Action |
+| --- | --- |
+| `V`, `P`, `E` | Select, pen, eraser |
+| `R`, `O`, `L`, `A`, `T`, `H` | Rectangle, ellipse, line, arrow, text, pan |
+| `Space` + drag / middle mouse drag | Pan |
+| `Ctrl` / `Cmd` + scroll | Zoom at the pointer |
+| `Shift` while drawing | Squares/circles or lines at 45-degree increments |
+| `Ctrl` / `Cmd` + `Z` / `Shift+Z` | Undo / redo |
+| `Ctrl` / `Cmd` + `D` | Duplicate selected element |
+| `Delete` / `Backspace` | Remove selected element |
+| Double-click text | Edit the label |
+| `Ctrl` / `Cmd` + `S` | Save the active board to your account |
+
+Use the selection tool to move individual shapes, labels, and strokes. Preset nodes, edges, and labels remain independently editable; they are not automatically connected when moved. The eraser removes entire touched elements rather than parts of a stroke. Images export the whole diagram without the editor grid or selection marks, with a background matching the active theme. PNG dimensions are capped at 4096 pixels on either axis. JSON imports and account saves validate element types, coordinates, colors, document size, and element IDs; arbitrary SVG/HTML import is not supported. A board supports 400 elements, 12,000 stroke points total, and a 400 KB document.
 
 ### Test generator formats
 
@@ -135,7 +155,9 @@ server/app.js         Authenticated HTTP API, quotas, persistence, static servin
 server/compiler.js    OnlineCompiler.io adapter and response normalization
 server/stress.js      Seeded generators and cancellable comparison jobs
 server/validation.js  Shared server input schemas and compiler identifiers
+shared/whiteboard.js  Validated board format, geometry, presets, and SVG export
 supabase/schema.sql   Database tables, constraints, indexes, and RLS
+supabase/migrations/  Incremental setup for existing installations
 tests/                Engine/API tests and Playwright browser checks
 scripts/              Live service diagnostics and integration test
 requirements/         Original academic requirements PDF
@@ -143,6 +165,6 @@ requirements/         Original academic requirements PDF
 
 In persistent-server mode, stress jobs live in process memory and stop on server restart; finished jobs remain available for 30 minutes. Vercel uses the per-case browser-driven mode described above. Set `STRESS_MODE=stepped` to exercise that mode locally. Both modes have a 10-minute overall deadline and save reports to Supabase. Execution quotas are per process; deployments requiring strict quotas across multiple instances should use a shared rate-limit store.
 
-The testcase debugger, algorithm visualizer, template vault, and whiteboard are outside this implementation's requested scope.
+The testcase debugger, algorithm visualizer, and template vault are outside this implementation's requested scope.
 
 Provider references: [OnlineCompiler run API](https://onlinecompiler.io/docs/run-code), [compiler identifiers](https://onlinecompiler.io/docs/compilers), [Supabase email signup](https://supabase.com/docs/reference/javascript/auth-signup), [Supabase API key roles](https://supabase.com/docs/guides/getting-started/api-keys), [Vercel Node functions](https://vercel.com/docs/functions/runtimes/node-js), [Vercel routing configuration](https://vercel.com/docs/project-configuration/vercel-json).

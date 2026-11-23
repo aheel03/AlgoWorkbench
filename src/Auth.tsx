@@ -24,7 +24,7 @@ export function Auth({ ctx, onClose, initialMode = 'signup' }: { ctx: AppContext
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
   return <Modal title={mode === 'signup' ? 'Create your account' : 'Welcome back'} onClose={onClose}>
-    <div className="auth-intro"><div className="auth-icon">{mode === 'signup' ? <UserPlus /> : <LogIn />}</div><p>Your code. Your experiments. Your own little corner of the internet.</p></div>
+    <div className="auth-intro"><div className="auth-icon">{mode === 'signup' ? <UserPlus /> : <LogIn />}</div><p>Sign in to run code and save your work.</p></div>
     <div className="segmented"><button className={mode === 'signup' ? 'selected' : ''} onClick={() => { setMode('signup'); setError(null); setMessage(''); }}>Create account</button><button className={mode === 'signin' ? 'selected' : ''} onClick={() => { setMode('signin'); setError(null); setMessage(''); }}>Sign in</button></div>
     <form onSubmit={submit} className="form-stack">
       {mode === 'signup' && <label>Username<input value={username} onChange={e => setUsername(e.target.value)} placeholder="your_handle" autoComplete="username" minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]+" title="3–24 letters, numbers, or underscores" required /></label>}

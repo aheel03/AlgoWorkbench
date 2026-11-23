@@ -9,13 +9,15 @@ import { X, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import type { Language } from './types';
 import { languageNames } from './lib';
+import { useTheme } from './theme';
 
 export function LanguageSelect({ value, onChange, label = 'Programming language' }: { value: Language; onChange: (l: Language) => void; label?: string }) {
   return <select aria-label={label} value={value} onChange={e => onChange(e.target.value as Language)}>{Object.entries(languageNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>;
 }
 export function Editor({ code, language, onChange, height = '440px', label = 'Source code' }: { code: string; language: Language; onChange: (v: string) => void; height?: string; label?: string }) {
+  const { theme } = useTheme();
   const extension = language === 'python' ? python() : language === 'java' ? java() : language === 'javascript' ? javascript() : cpp();
-  return <CodeMirror aria-label={label} value={code} height={height} theme={oneDark} extensions={[extension]} onChange={onChange} basicSetup={{ foldGutter: true, highlightActiveLine: true, autocompletion: true, tabSize: 4 }} indentWithTab />;
+  return <CodeMirror aria-label={label} value={code} height={height} theme={theme === 'dark' ? oneDark : 'light'} extensions={[extension]} onChange={onChange} basicSetup={{ foldGutter: true, highlightActiveLine: true, autocompletion: true, tabSize: 4 }} indentWithTab />;
 }
 export function Modal({ title, children, onClose, wide = false }: { title: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);

@@ -12,7 +12,7 @@ async function signedIn(page: import('@playwright/test').Page) {
 test('guest can edit, navigate, and open accessible authentication', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Your next accepted solution.' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Custom input' })).toBeVisible();
   await page.screenshot({ path: 'test-results/ide-desktop.png', fullPage: true });
   await page.getByRole('textbox', { name: 'Custom input' }).fill('3\n10 20 30');
   await page.getByRole('button', { name: 'Run code', exact: true }).click();
@@ -20,10 +20,10 @@ test('guest can edit, navigate, and open accessible authentication', async ({ pa
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.getByRole('button', { name: /Stress Lab/ }).click();
-  await expect(page.getByRole('heading', { name: 'Break it before the judge does.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Brute-force solution', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/stress-desktop.png', fullPage: true });
   await page.getByRole('button', { name: /My solutions/ }).click();
-  await expect(page.getByRole('heading', { name: 'Make yourself at home.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in to view saved solutions' })).toBeVisible();
   await page.getByRole('button', { name: /Online IDE/ }).click();
   await expect(page.getByRole('textbox', { name: 'Custom input' })).toHaveValue('3\n10 20 30');
 });
@@ -31,11 +31,11 @@ test('guest can edit, navigate, and open accessible authentication', async ({ pa
 test('mobile layout stays within the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Your next accepted solution.' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Custom input' })).toBeVisible();
   await page.screenshot({ path: 'test-results/ide-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
   await page.getByRole('button', { name: /Stress Lab/ }).click();
-  await expect(page.getByRole('heading', { name: 'Break it before the judge does.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Brute-force solution', exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
@@ -80,12 +80,12 @@ test('stress counterexample survives navigation and browser refresh', async ({ p
   await page.route('**/api/stress/test-job', route => route.fulfill({ json: finished }));
   await page.goto('/'); await page.getByRole('button', { name: /Stress Lab/ }).click();
   await page.getByRole('button', { name: 'Start stress test', exact: true }).click();
-  await expect(page.getByText('Found it. A counterexample!')).toBeVisible();
+  await expect(page.getByText('Counterexample found')).toBeVisible();
   await expect(page.getByText('Outputs do not match', { exact: true })).toBeVisible();
   await expect(page.locator('.counterexample-cell pre').first()).toHaveText('2\n7 8\n');
   await page.waitForTimeout(600); // Allow the debounced browser draft to persist.
   await page.reload(); await page.getByRole('button', { name: /Stress Lab/ }).click();
-  await expect(page.getByText('Found it. A counterexample!')).toBeVisible();
+  await expect(page.getByText('Counterexample found')).toBeVisible();
 });
 
 async function steppedConfig(page: import('@playwright/test').Page) {
@@ -112,7 +112,7 @@ test('serverless stress runs every case sequentially and saves its complete repo
   await page.goto('/'); await page.getByRole('button', { name: /Stress Lab/ }).click();
   await page.getByRole('spinbutton', { name: /^Test cases/ }).fill('3');
   await page.getByRole('button', { name: 'Start stress test', exact: true }).click();
-  await expect(page.getByText('All tests passed. Nicely done.')).toBeVisible();
+  await expect(page.getByText('All tests passed')).toBeVisible();
   expect(cases).toEqual([1, 2, 3]);
   await page.getByRole('button', { name: 'Save run', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeDisabled();
@@ -133,7 +133,7 @@ test('serverless stress resumes from the next unfinished case after refresh', as
   await page.waitForTimeout(650);
   blockSecond = false; await page.reload();
   await page.getByRole('button', { name: /Stress Lab/ }).click();
-  await expect(page.getByText('All tests passed. Nicely done.')).toBeVisible();
+  await expect(page.getByText('All tests passed')).toBeVisible();
   expect(cases.filter(i => i === 1)).toHaveLength(1);
   expect(cases.at(-1)).toBe(2);
 });
